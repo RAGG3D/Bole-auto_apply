@@ -27,7 +27,7 @@ printing; without one, HTML remains available for manual printing. OpenClaw is o
 Bole submission; Lite does not use it.
 
 ```sh
-git clone https://github.com/RAGG3D/Bole-.git bole
+git clone https://github.com/RAGG3D/Bole-auto_apply.git bole
 cd bole
 bash install.sh
 ```

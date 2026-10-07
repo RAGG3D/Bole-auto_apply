@@ -28,7 +28,7 @@ Bole 是本地求职技能包：发现职位、按完整 JD 匹配、生成简�
 没有浏览器保留 HTML，手动打印。自动投递另需可用 OpenClaw；Lite 不需要。
 
 ```sh
-git clone https://github.com/RAGG3D/Bole-.git bole
+git clone https://github.com/RAGG3D/Bole-auto_apply.git bole
 cd bole
 bash install.sh
 ```
