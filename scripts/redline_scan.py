@@ -28,8 +28,10 @@ def strings(value: Any, path: str = "$") -> Iterator[tuple[str, str]]:
 
 def term_pattern(term: str) -> re.Pattern[str]:
     escaped = re.escape(term.strip())
-    left = r"(?<!\w)" if term and term[0].isalnum() else ""
-    right = r"(?!\w)" if term and term[-1].isalnum() else ""
+    # Chinese text commonly touches English tool names without spaces. Unicode
+    # \w boundaries would miss "使用Power BI制作报表" as well as Chinese red lines.
+    left = r"(?<![A-Za-z0-9_])" if term and term[0].isascii() and term[0].isalnum() else ""
+    right = r"(?![A-Za-z0-9_])" if term and term[-1].isascii() and term[-1].isalnum() else ""
     return re.compile(left + escaped + right, re.IGNORECASE)
 
 

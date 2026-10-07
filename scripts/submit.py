@@ -178,19 +178,37 @@ def timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def materials(job: Path) -> tuple[Path, Path]:
+def materials(job: Path, verdict: dict[str, Any]) -> dict[str, Path]:
     pdfs = sorted(job.glob("*.pdf"))
-    cv = next((path for path in pdfs if re.search(r"\bcv\b", path.name, re.I)), None)
-    cover = next(
-        (path for path in pdfs if re.search(r"cover(?:\s+letter)?", path.name, re.I)),
-        None,
-    )
-    if cv is None or cover is None or not (job / "README.md").is_file():
-        raise SubmitError("材料不齐：需要 CV PDF、Cover Letter PDF 和 README.md")
-    return cv.resolve(), cover.resolve()
+    required = verdict.get("required_documents", ["cv", "cover"])
+    declared = verdict.get("material_files", {})
+    selected: dict[str, Path] = {}
+    for kind in required:
+        filename = declared.get(kind)
+        if filename:
+            if Path(filename).name != filename:
+                raise SubmitError("material_files 只能指定岗位目录中的 PDF 文件名")
+            matches = [job / filename]
+        elif kind in {"cv", "cover"}:
+            pattern = r"\bcv\b" if kind == "cv" else r"cover(?:\s+letter)?"
+            matches = [p for p in pdfs if re.search(pattern, p.name, re.I)]
+        else:
+            raise SubmitError(f"需要为 {kind} 指定 material_files 中的准确 PDF 文件名")
+        if len(matches) != 1 or not matches[0].is_file() or matches[0].suffix.lower() != ".pdf":
+            raise SubmitError(f"材料缺失或有多个候选：{kind}；请指定唯一文件")
+        path = matches[0].resolve()
+        if path.parent != job.resolve() or not path.read_bytes().startswith(b"%PDF"):
+            raise SubmitError(f"材料不是岗位目录内有效 PDF：{kind}")
+        selected[kind] = path
+    if "cv" not in selected or not (job / "README.md").is_file():
+        raise SubmitError("材料不齐：需要 CV PDF 和 README.md")
+    if len(set(selected.values())) != len(selected):
+        raise SubmitError("不同材料不能映射为同一个 PDF")
+    return selected
 
 
 def ensure_no_redlines(job: Path, facts: dict[str, Any]) -> None:
+    from redline_scan import term_pattern
     content = job / "_content"
     if not content.is_dir():
         raise SubmitError("缺少 _content/，无法投前复核红线；请重跑 /scan")
@@ -202,9 +220,7 @@ def ensure_no_redlines(job: Path, facts: dict[str, Any]) -> None:
         term = str(raw).strip()
         if not term:
             continue
-        left = r"(?<!\w)" if term[0].isalnum() else ""
-        right = r"(?!\w)" if term[-1].isalnum() else ""
-        if re.search(left + re.escape(term) + right, combined, re.I):
+        if term_pattern(term).search(combined):
             raise SubmitError(f"投前红线复核失败：材料命中「{term}」")
 
 
@@ -235,7 +251,8 @@ def task_message(
     ats_name: str,
     ats_entry: dict[str, Any],
     cv: Path,
-    cover: Path,
+    cover: Path | None,
+    additional: dict[str, Path] | None = None,
 ) -> str:
     url = str(verdict.get("apply_url") or verdict.get("url"))
     basics = facts.get("basics", {}) if isinstance(facts.get("basics"), dict) else {}
@@ -244,7 +261,11 @@ def task_message(
         quick.append(f"- 工作权利：{basics['work_rights']}")
     if basics.get("notice_period"):
         quick.append(f"- 通知期：{basics['notice_period']}")
-    quick.append("- 如何得知职位：LinkedIn")
+    source = str(verdict.get("source") or "")
+    source_label = {"linkedin": "LinkedIn", "manual": "用户提供的职位链接/正文",
+                    "workday": "公司招聘网站", "board": "公司职位板"}.get(source, source)
+    if source_label:
+        quick.append(f"- 如何得知职位：{source_label}")
     salary = salary_answer(verdict, config)
     if salary:
         amount, currency, includes_super = salary
@@ -268,8 +289,10 @@ def task_message(
 
 2. 材料
 - CV：{cv}
-- Cover Letter：{cover}
-必须上传这两个指定文件，绝不使用平台已存储的旧简历；简历解析回填的字段要逐一核对并改回定制内容。
+- Cover Letter：{cover or '本岗位未要求'}
+{chr(10).join(f'- {kind}: {path}' for kind, path in (additional or {}).items())}
+必须按表单上传清单中的指定文件，核对上传预览与该岗位文件一致；绝不使用平台已存储的旧简历。
+简历解析回填的字段要逐一核对并改回定制内容；所需附加文件缺入口时报告 NEED，不遗漏后直接提交。
 
 3. 表单速查答案
 {chr(10).join(quick)}
@@ -475,6 +498,24 @@ def require_auto_submit(config: dict[str, Any]) -> dict[str, Any]:
     return auto
 
 
+def ensure_package_policy(job: Path, verdict: dict[str, Any], config_path: Path,
+                          facts_path: Path) -> None:
+    # Check explicit mode/policy even on legacy packs and even with --force.
+    if (verdict.get("material_mode") == "stretch"
+            or verdict.get("workflow_variant") == "lite"
+            or verdict.get("submission_policy") in {"never", "manual_only"}):
+        raise SubmitError("此包只生成文件/手动处理；禁止自动上传或投递（Stretch / Lite）")
+    if verdict.get("schema_version") != 2:
+        raise SubmitError("旧投递包需升级 v2 verdict 并重审，不能直接提交")
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/workflow_guard.py"), "submit",
+         "--job", str(job), "--config", str(config_path), "--facts", str(facts_path)],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode:
+        raise SubmitError(result.stderr.strip() or "投前工作流检查失败")
+
+
 def replace_or_add(data: dict[str, Any], entry: dict[str, Any]) -> dict[str, Any]:
     """合并进台账并返回权威 dict；attempts 追加式保留历史，evidence 不被空值抹掉。"""
     previous = find_entry(data, entry["jd_key"])
@@ -496,6 +537,7 @@ def run_job(
     config = load_object(config_path, "配置")
     facts = load_object(facts_path, "事实台账")
     auto = require_auto_submit(config)
+    ensure_package_policy(job, verdict, config_path, facts_path)
     data = load_submissions()
     previous = find_entry(data, verdict["jd_key"])
     if (
@@ -545,7 +587,7 @@ def run_job(
         save_submissions(data)
         mark_job(job, entry)
         raise SubmitError(f"{ats_name} 不在自动投递路由中，已记入手动队列")
-    cv, cover = materials(job)
+    selected = materials(job, verdict)
     ensure_no_redlines(job, facts)
     thread = new_thread(verdict["jd_key"])
     entry = base_entry(verdict, ats_name, thread)
@@ -553,7 +595,9 @@ def run_job(
     # 先以 status=unknown 落盘：进程若在投递会话中途死亡，去重铁则会拦住下一次 run，必须先 verify
     save_submissions(data)
     mark_job(job, entry)
-    message = task_message(verdict, config, facts, ats_name, ats_entry, cv, cover)
+    message = task_message(verdict, config, facts, ats_name, ats_entry,
+                           selected["cv"], selected.get("cover"),
+                           {k: v for k, v in selected.items() if k not in {"cv", "cover"}})
     try:
         kind, payload = invoke_openclaw(
             message, thread=thread, timeout=float(auto.get("submit_timeout_s", 600))
@@ -575,6 +619,7 @@ def continue_job(job: Path, answer: str | None) -> int:
     # 与 run 同一道闸门：用户中途关掉开关后，续跑同样不许再碰 OpenClaw（verify 只读不受限）
     config = load_object(DEFAULT_CONFIG, "配置")
     auto = require_auto_submit(config)
+    ensure_package_policy(job, verdict, DEFAULT_CONFIG, DEFAULT_FACTS)
     data = load_submissions()
     entry = find_entry(data, verdict["jd_key"])
     if not entry or not entry.get("thread"):
@@ -583,7 +628,8 @@ def continue_job(job: Path, answer: str | None) -> int:
         raise SubmitError(f"当前状态为 {entry.get('status')}，安全规则禁止续跑")
     attempts = entry.get("attempts", [])
     if entry.get("status") == "unknown" and (
-        not attempts
+        entry.get("in_flight")
+        or not attempts
         or attempts[-1].get("action") != "verify"
         or attempts[-1].get("result") != "NOT_SUBMITTED"
     ):
@@ -609,8 +655,22 @@ def continue_job(job: Path, answer: str | None) -> int:
             "请从当前进度继续完成本次投递，不要重复已完成的步骤；仍遵守原任务消息中的"
             "行为红线，最后必须以恰好一行 RESULT: 协议行结束"
         )
+    if (not answer and attempts and attempts[-1].get("action") == "verify"
+            and attempts[-1].get("result") == "NOT_SUBMITTED"):
+        count = entry.get("recovery_continues", 0)
+        if count >= int(auto.get("max_continues_per_job", 6)):
+            entry["status"] = "manual"
+            save_submissions(data)
+            mark_job(job, entry)
+            raise SubmitError("已达核实后续跑上限，转手动")
+        entry["recovery_continues"] = count + 1
+    # A process dying during continuation also requires read-only verification.
+    entry["status"] = "unknown"
+    entry["in_flight"] = True
+    save_submissions(data)
     timeout = float(auto.get("submit_timeout_s", 600))
     kind, payload = invoke_openclaw(message, thread=entry["thread"], timeout=timeout)
+    entry["in_flight"] = False
     line = apply_result(entry, "continue", kind, payload)
     save_submissions(data)
     mark_job(job, entry)
@@ -630,6 +690,7 @@ def verify_job(job: Path) -> int:
         verify_message(verdict), thread=None, timeout=timeout
     )
     line = apply_verify(entry, kind, payload)
+    entry["in_flight"] = False
     save_submissions(data)
     mark_job(job, entry)
     print(line)

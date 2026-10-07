@@ -358,7 +358,7 @@ class CoreFlowTests(unittest.TestCase):
             self.assertNotIn("\ufffd", rendered)
 
     def test_china_manual_flow_contract_is_self_contained(self) -> None:
-        scan = (ROOT / ".claude/commands/scan.md").read_text(encoding="utf-8")
+        scan = (ROOT / "references/workflows/scan.md").read_text(encoding="utf-8")
         for expected in (
             "有没有想补投的职位链接？任何网站都行，包括中国大陆招聘站",
             "sources.py jd --source url",

@@ -2,209 +2,170 @@
 
 [中文](README.md)
 
-> **Fine horses are common; a good judge of them is rare—now there is one.**
+Bole is a local job-application skill for Claude, Codex and other agents that can read files and
+run Python. It discovers jobs, evaluates full descriptions, writes tailored documents, and can
+submit applications with authorization. **Strict mode uses confirmed facts. Explicit Stretch
+requests produce expanded drafts for local review only: no uploading or submission.**
 
-Bole is an open-source job-application assistant that lives inside [Claude Code](https://claude.com/claude-code): it discovers roles, scores honest fit, and tailors a CV, cover letter, and application guide to every JD—based strictly on **experience you have confirmed**. No mass applying. No fabrication. It is a clone-and-run skill pack—not a website or cloud service; your data stays on your own machine.
+## Full or Lite?
 
----
+| | Bole | Bole Lite |
+|---|---|---|
+| Job advertisements | Configured discovery plus user links | User supplies **all links or full JDs** |
+| Matching | Eligibility, responsibilities, scoring, recall review | Requirement-to-evidence mapping; no discovery/ranking |
+| Default documents | CV, cover, other documents requested by the JD | CV; cover only when requested |
+| Stretch | Explicit opt-in, documents only | Same boundaries |
+| Submission | Optional OpenClaw, disabled by default | **User submits manually** |
+| Central token budget per job | ~130,700 including submission | ~28,300 for a CV |
 
-## ⚡ Quick Start (Three Steps)
+This is an agent-driven skill, not a standalone unattended program or an exhaustive search service.
 
-**Prerequisites**: Python ≥ 3.10; an installed and authenticated [Claude Code CLI](https://claude.com/claude-code) (your own subscription, any model); Git. Chrome/Chromium/Edge is recommended for automatic PDF printing—without one, Bole still generates HTML you can print with Ctrl+P.
+## Getting started
 
-```bash
+Use Python ≥3.10, Git and an agent with access to this directory. Chrome/Chromium/Edge enables PDF
+printing; without one, HTML remains available for manual printing. OpenClaw is optional for full
+Bole submission; Lite does not use it.
+
+```sh
 git clone https://github.com/RAGG3D/Bole-.git bole
 cd bole
-bash install.sh   # checks the environment and gives guidance; never installs anything
-claude
+bash install.sh
 ```
 
-Inside Claude Code, run three commands in order:
+Ask your agent:
 
-| Step | Command | What it does |
-|---|---|---|
-| 1 | `/doctor` | Environment check: item by item, with fix guidance—**never silently installs anything** |
-| 2 | `/setup` | Interview-style profiling: five short rounds covering experience/skills/red lines/targets, each fact confirmed before entering your local "facts ledger" |
-| 3 | `/scan` | Discover jobs → score and tier → generate a tailored CV/cover-letter PDF plus a per-job application README for every match |
+```text
+Read SKILL.md. Use Bole to set up my profile and match jobs from the last seven days.
+Generate documents only.
 
-Then open the `Applications/` folder: one folder per matching job, containing the full JD, tailored CV PDF, tailored cover letter PDF, and a README that tells you **how to apply and what salary to enter**. Just follow it.
+Read bole-lite/SKILL.md. Here are all my job advertisement links: ...
+Use my confirmed profile and red lines to generate a two-page English CV for each job.
+I will submit them myself.
 
-After showing the initial triage buckets, every `/scan` run asks whether you
-want to add a role. Paste a detail-page URL from any site, or paste the full JD
-when no usable link exists.
-
-The search window defaults to the last 7 days (written to `config.days` during
-`/setup`). To change it for one run, just tell `/scan` something like "last
-3 days only" or "extend to 14 days" (it maps to `discover --days N`—no config
-edit needed); update `days` in `profile/config.json` to change it permanently.
-
-The fourth command, `/apply` (auto-submit), is **off by default**; running it with the switch off only explains activation and touches no network. Once enabled, every submission **auto-marks its result** into the job folder's `STATUS.md` (✅ submitted / ⏸ needs input / 🧱 blocked→manual / ❓ verify first), so a glance at `Applications/` shows what went out and what is stuck where. See "Auto-submit" below.
-
-The repo also ships an independent plugin unrelated to job hunting: **assHOLassin**, a local mail-cleanup assassin. Three commands: `/mail-setup` connects your own mailbox with an auth code you generate yourself (Gmail / Outlook·Hotmail / NetEase 163·126 / QQ, etc.) → `/mail-rules` sets sender/subject keywords, a time window, and a cleanup level (soft-mark / trash / purge) → `/mail-clean` always dry-runs the hit list first and acts only after you confirm. See "Plugins" below.
-
----
-
-## Three Founding Principles
-
-1. **The facts ledger is the only source of truth**. Facts you confirm item by item during `/setup`—experience, skills, quantified results—form your local `profile/facts.json`. All generated materials and form answers may reference only ledger facts: **fabrication is structurally impossible**, and a deterministic scanner gate-keeps before any PDF is produced.
-2. **Red lines**. Profiling explicitly asks "which skills do you NOT have and must never appear?" (e.g., never used Power BI, no wet-lab work). If a red-line term appears in generated material, the scanner refuses to produce the PDF.
-3. **The honest gap sentence**. For weaker-fit roles, the cover letter contains **exactly one** calm, unapologetic statement of the real gap, immediately followed by your transferable strengths—no false perfection, no self-deprecation.
-
-## How It Works
-
-```
-Discover jobs via free public channels (LinkedIn / Workday / public ATS / any detail URL / pasted JD)
-        │
-        ▼
-Ledger dedup → mechanical triage: regex bucketing filters out senior/ineligible/red-line roles first
-        │                                            — what it saves is your token budget
-        ▼
-Claude reads each full JD and scores (0-100): eligibility gate → seniority cap → red-line check → tiering
-        │                         Tier 1 (80+) / Tier 2 (70-79) / Tier 3 (<70)
-        ▼
-Generate materials (ledger facts only) → red-line scan (no pass, no PDF) → local browser prints PDF (zero heavy deps)
-        │
-        ▼
-Per-job README: score & rationale, recommended salary (number + currency + reasoning), known ATS quirks, form answers
+Use Bole Lite Stretch for these jobs. Add plausible implementation details for technical
+requirements while preserving each experience's original skills, architecture and achievements.
+Generate local files only; do not upload or submit.
 ```
 
-Hard rules worth knowing: senior roles (Senior/Lead+) are score-capped and **never generated**—applying to the wrong roles wastes everyone's time; roles requiring citizenship/PR/clearance you lack are skipped outright; a JD under 800 characters is flagged as a stub and **can never be auto-submitted directly**; the generation boundary is set jointly by fit score, core red lines, stretch tolerance, and the `max_generate` cap.
+Claude Code can use `/doctor` → `/setup` → `/scan`. Other agents read the same procedures in
+`references/workflows/`. AGENTS.md and CLAUDE.md route to the shared skill; slash commands do not
+maintain separate rules. Reuse an existing confirmed profile and resolve only missing/conflicting facts.
 
-Each generated job folder contains: `JD.txt`, `verdict.json` (the scoring verdict), the tailored CV, tailored cover letter, application README, and `_content/` source JSON. Recommended salary is only a regional/job-specific starting point; with no evidence Bole says "no reference range" instead of inventing a number.
+Build a self-contained directory for your chosen agent's skill location:
 
-## Auto-submit (v0.2, Off by Default)
+```sh
+python3 scripts/package_skill.py --variant full --out /tmp/bole
+python3 scripts/package_skill.py --variant lite --out /tmp/bole-lite
+```
 
-`/apply` can hand roles on "clean ATS" platforms (field-tested: Greenhouse / Ashby / HiBob / Oracle / Workday) to the [OpenClaw](https://www.npmjs.com/package/openclaw) browser agent for automatic submission. OpenClaw is free, open source, uses your own Claude subscription, and is Bole's **only optional external dependency**—without it, profiling/scanning/document generation remain fully functional.
+The destination must not exist. Packaging copies an allowlist of public resources, never profiles,
+chat logs, credentials or generated applications. Automatic discovery depends on the host agent;
+explicitly asking it to read SKILL.md remains available. [Agent portability](references/agents.md).
 
-If you choose to enable it:
+## What changed in v0.6
 
-1. Install Node ≥ 18 and `npm install -g openclaw` yourself;
-2. Run `/doctor`, follow its `openclaw gateway run` guidance, and personally log into the target job sites;
-3. After understanding the confirmation modes, set `config.auto_submit.enabled` to `true`;
-4. Run `/apply` and approve the list under `per_run` (default, once per round) or `per_job` (per submission).
+- **Recall and false matches:** expand role families using actual responsibilities. A consultant
+  may perform automation work, but the title alone is not evidence. Report source coverage and
+  fetch failures instead of claiming that undiscovered jobs do not exist.
+- **Full-JD gate:** read the description and required PD/selection-criteria attachments before
+  generating. Character count is only a warning. Closed, excluded, ineligible or incomplete roles
+  stay in a central report without empty application folders.
+- **Conservative title filtering:** citizenship, clearance and red-line title signals go to REVIEW.
+  Corporate graduate programs are not automatically treated as citizenship-restricted government
+  jobs. Manual links get full review; the employer blocklist still applies.
+- **Current evidence and writing:** incorporate confirmed new projects and corrections; check required
+  experiences. Preserve project purpose, architecture, ownership, dates and achievements. Finalize
+  the CV before polishing its cover. Do not invent a weakness to satisfy a mandatory gap sentence.
+- **Review and submission:** check CV/cover target-title consistency and hash reviewed artifacts.
+  Changed files or facts invalidate review. All eligible tiers enter the authorized queue. Confirm
+  the selected upload instead of reusing the platform's old CV. Verify timeouts before resuming.
 
-Safety design:
+The public audit summarizes recent real corrections without copying personal records or account
+permissions. [Audit](references/workflow-audit.md) · [Matching](references/matching.md) ·
+[Documents](references/materials.md) · [JSON contracts](references/contracts.md).
 
-- Only platforms with `auto_submit=true` in `data/ats_map.json` **and** present in your `allowed_ats` whitelist are automated; everything else stays a manual pack;
-- Strictly sequential submission, at least 30 seconds apart, with a per-run cap;
-- Login/registration/password steps are done by **you** in the browser—Bole never receives, stores, or types any password; the sole exception is an email one-time code (OTP) you relay, discarded after use (each Workday company tenant is a separate account, so first or repeat applications may need you to log in first—by design, not a fault);
-- **Timeout ≠ failure**: the agent may have submitted and lost its reply. After a timeout Bole verifies read-only first; `UNKNOWN` status is **never auto-resubmitted**; a role already `submitted` or `unknown` is refused outright (`--force` overrides but can double-submit—use only after manual verification);
-- CAPTCHA, online assessments, video interviews, OAuth-only registration → blocked immediately, routed to manual;
-- **Submission status marked back into `Applications/`**: on every status change, the job folder's `STATUS.md` is updated in place (✅ submitted / ⏸ needs input / 🧱 blocked→manual / 📝 manual / ❓ unknown—verify first), so a glance at the folder tells you where each application stands.
+## Strict and Stretch
 
-## Privacy & Security
+Strict is the default. Confirmed facts and explicit current corrections are evidence; JD requirements
+and earlier model-generated resumes are not. Red-line scanning checks terms and limited rules:
+**it cannot prove truthfulness**. The agent must still verify attribution, dates, skills and outcomes.
 
-- Your profile (`profile/`), generated materials (`Applications/`), and run state (`state/`) stay **local only**, gitignored, never committed;
-- No telemetry;
-- Unauthenticated fetching follows politeness rules: custom UA, ≥ 2s between requests, 429 backoff, never carries cookies; use of LinkedIn's guest interface may still be governed by platform terms—Bole rate-limits and prefers direct company ATS by default, evaluate for yourself (see Disclaimer);
-- OpenClaw's login state lives in its own browser profile; Bole does not read it.
+Stretch requires an explicit request for “Stretch” or invented/expanded hard-skill implementation
+claims. Ordinary “write a resume” and the legacy `config.stretch` matching tolerance do not enable it.
+Freeze a strict baseline, then append compatible implementation details to the most suitable existing
+experience. Preserve original technologies, architecture, purpose, dates, team role and achievements.
+Never turn a local tool into an enterprise platform or invent credentials, clients, tenure or metrics.
 
-## Supported Job Sources
+`tailoring.json` distinguishes verified and proposed additions and explains their placement. Unsupported
+requirements remain gaps; no guaranteed perfect coverage. Drafts go under `Applications/Stretch/` with
+`material_mode=stretch, submission_policy=never`. The submission script blocks run, continue and force.
+To use the substance in a real application, confirm both the skill and its project attribution, then
+build and review a new strict package. [Stretch procedure](references/stretch.md).
 
-| Source | Method | Notes |
-|---|---|---|
-| LinkedIn | Guest API, no login | Junior-role recall boost; stub JDs flagged; external ATS apply links resolved |
-| Workday | Public JSON | Configure target company sites in config |
-| Greenhouse / Lever / Ashby | Public board JSON | Configure company tokens in config |
-| Company career pages | URL fetch | Bot-wall detection; walled URLs go to the manual queue (never lost) |
-| Mainland China job sites | User-pasted job detail URL | Polite direct fetch; login/access walls fall back to pasted JD |
-| SEEK | Pasted JD | No free interface; paste it in, the rest of the flow is identical |
+## Token budget per job
 
-Note: after a company rename or dual branding, dual-key dedup can still miss duplicates—check manually before applying.
+| Mode | Central estimate | Planning range |
+|---|---:|---:|
+| Full Bole: CV + cover + ATS + verification | 130,700 | 65,350–392,100 |
+| Bole Stretch: files only | 80,500 | 40,250–241,500 |
+| Lite: CV, manual submission | 28,300 | 14,150–84,900 |
+| Lite Stretch: expanded CV, no submission | 48,100 | 24,050–144,300 |
 
-## Mainland China Job Sites
+**These are scenario estimates, not measured averages for v0.6.** They count input plus output,
+including cached input and repeated context. They do not represent subscription charges. Assumptions:
+existing profile, compact stage context, five ATS calls and one verification for full Bole. Long chat
+history, revisions, extra documents and retries can exceed the range. Lite's central estimate is about
+78% lower because discovery, default cover writing and automated submission are removed; output scope differs.
 
-On-site search at BOSS Zhipin, Zhaopin, 51job, Liepin, and Lagou commonly
-requires an account or uses strong anti-bot controls. Bole does not simulate
-login, perform on-site search, or bypass GeeTest, sliders, or access checks.
-Use either of these paths:
+```sh
+python3 scripts/token_budget.py --variant full --jobs 10
+python3 scripts/token_budget.py --variant lite --jobs 10 --stretch
+python3 scripts/token_budget.py --usage state/usage.jsonl --jobs 10 --submitted 8
+```
 
-1. run `/scan` and paste a job **detail-page URL** at the fixed add-a-role
-   prompt after initial triage. Bole tries a polite
-   `sources.py jd --source url` fetch with UTF-8 and GBK/GB2312/GB18030 support;
-2. if the result is `bot_walled` or incomplete, copy and paste the full JD in
-   the same run. The original URL stays in the manual queue.
+[Stage arithmetic, historical limitations and observed-usage format](references/token-budget.md).
+Observed usage requires per-call records from every participating agent and submission adapter;
+cumulative session counters must not be summed or divided by an unrelated batch's job count.
 
-All of these platforms are manual-only in `ats_map`. BOSS Zhipin is
-conversation-first: Bole can prepare a Chinese CV, cover letter, and opening
-message strictly from the facts ledger and JD, but you must send the message
-yourself. Set `facts.language_of_materials` to `"zh"` for Chinese documents.
+## Files and submission
 
-Chinese job forms commonly request monthly salary. Each application README
-converts the structured annual figure to a 12-month baseline and reminds you to
-calibrate 13–16 salary months, bonuses, and gross/net conventions yourself.
+Runtime data stays in gitignored `profile/`, `Applications/` and `state/`. Each package includes its JD,
+verdict, content JSON, PDF/HTML, tailoring notes and review hashes. Full packages use 80+/70–79/<70 tiers;
+Lite and Stretch use separate directories. Pending full-JD, review and capacity-deferred items survive
+into the next run rather than disappearing behind the seen ledger.
 
-## Plugins
+`/apply` requires `auto_submit.enabled=true`, applicable user authorization and the configured confirmation
+strategy. ATS routing must also allow the site. Old packages must be upgraded to a v2 verdict and reviewed.
+Only a confirmation page, authoritative application list or confirmation email proves submission; unknown
+outcomes are never blindly retried. STATUS.md tracks each package's state.
 
-### assHOLassin: Local Mail Cleanup
+Users handle login by default. Mail access and platform cleanup depend on explicit current authorization
+and available tools; a previous individual's permissions never become distributed skill defaults. Human
+verification and assessments are not bypassed. Lite and Stretch never invoke the submission agent.
+[Submission protocol](references/workflows/apply.md).
 
-[assHOLassin](plugins/assholassin/README.md) is an independent Codex / Claude
-Code plugin with no dependency on Bole's job workflow. It uses Python's standard
-library and IMAP to connect to Gmail, Outlook/Hotmail, NetEase, and QQ/Foxmail,
-fetches headers only, and matches subscription-mail rules locally. Its fixed
-workflow is `/mail-setup` → `/mail-rules` → `/mail-clean`: dry-run first,
-execute only after confirmation, and require a separate confirmation for
-permanent deletion.
+Source scripts support LinkedIn, Workday, Greenhouse/Lever/Ashby boards, direct URLs and pasted JDs.
+The current agent's public search tools can locate SEEK/Indeed links; paste the complete text when access
+is blocked. Chinese direct URLs support common encodings; login search and bot-wall evasion are excluded.
+BOSS-style recruiter communication remains manual. Local file storage does not imply remote model inference
+is offline: the host agent/model's data policies still apply. Never commit application data or credentials.
 
-The plugin ships with no account or credential and does not use OAuth. Each user
-enters a revocable authorization code or app password through a hidden local
-terminal prompt. Login passwords and message bodies never enter the plugin.
+## Independent mail plugin
 
-## FAQ
+[assHOLassin](plugins/assholassin/README.md) remains an independent IMAP cleanup plugin:
+`/mail-setup` → `/mail-rules` → `/mail-clean`, with a dry run before confirmed changes.
+Job-search tasks do not automatically delete mail, rejection messages or application folders.
 
-**Does it cost money?** Zero paid dependencies. You only spend your own Claude subscription budget; scoring defaults to a token-saving mode (mechanical triage first, then batches of five).
-
-**Must I install OpenClaw?** No. Only the optional `/apply` uses it; the core application-pack workflow doesn't depend on it.
-
-**Will it fabricate my experience?** No—structurally: materials may only reference your confirmed facts ledger, and the red-line scan blocks any PDF otherwise.
-
-**Can I use an existing resume?** Yes, as interview evidence for `/setup`. Claude extracts and reads back each fact and number; only confirmed items enter the ledger.
-
-**Why does a weaker-fit cover letter include one gap sentence?** To set expectations honestly—immediately followed by transferable strengths; no apology, no self-deprecation, no invention.
-
-**Can I click submit again after a timeout?** No. The agent may have already submitted and lost the reply. Verify and check the confirmation email first to avoid duplicates.
-
-**Why not scrape SEEK?** SEEK has no free unauthenticated interface suitable for this project (commonly 403). Copy the JD text and paste it in.
-
-**Does a missing browser break it?** No. Bole keeps the complete HTML; open it in a browser and Ctrl+P to save as PDF.
-
-**Australia only?** No. Defaults use Melbourne as the example; region, keywords, and salary reference ranges (AU/US/UK/SG plus Beijing, Shanghai, Shenzhen, and Hangzhou) are configurable.
-
-**Windows?** Linux / macOS / Windows supported (WSL2 recommended; native Windows works after manually confirming the environment per the README).
-
-**English version?** You are reading it; UI language is controlled by `config.ui_language`. Generated CVs/cover letters default to English anyway (configurable).
-
-## Roadmap
-
-| Version | Scope | Status |
-|---|---|---|
-| v0.1 | /doctor checkup + /setup interview profiling + /scan scoring & "manual application packs" | ✅ Shipped (tag `v0.1`) |
-| v0.2 | /apply via OpenClaw: clean-ATS auto-submit + escalation loop + verify-after-timeout | ✅ Shipped (tag `v0.2`) |
-| v0.3 | Community: ats_map PR mechanism + regional salaries + English docs + offline CI | ✅ Shipped (tag `v0.3`) |
-| v0.4 | PII history cleanup + China direct/paste routes + Chinese web/document support | ✅ Shipped |
-| v0.5 | Standalone assHOLassin IMAP mail-cleanup plugin | ✅ Shipped |
-
-Future work stays local-first, zero-paid-dependency, fact-constrained, and human-recoverable.
-
-## Contributing
-
-Run the fully offline checks first:
+## Validation and contribution
 
 ```sh
 python3 scripts/ats_lint.py
 python3 -m unittest discover tests
 ```
 
-The most valuable contribution is **field-tested ATS experience**: which platforms submit cleanly, which have quirks—open an issue or PR against `data/ats_map.json` (domains must be lowercase and bare; lint and offline CI gate every change). Regional salary calibration is equally welcome. **Never submit PII** (names, email, phone, resume content, confirmation IDs) in issues or PRs. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Tests are offline and use fictional profiles and a fake submission adapter. Contributions to ATS maps
+and source-failure reports are welcome; exclude personal information from issues and PRs.
+[Contributing](CONTRIBUTING.md) · [MIT License](LICENSE).
 
-## Disclaimer
-
-- Verify all job judgments, materials, and salary guidance yourself before applying; application actions and outcomes are the user's responsibility;
-- Users must comply with each recruitment platform's terms and applicable privacy and employment laws;
-- Salary reference ranges are community data—starting points only; local market reality prevails;
-- Auto-submit is off by default; even when enabled it remains constrained by confirmation policy and safety gates, and always honors three iron rules: never take assessments, never touch credentials, walls go to manual;
-- The software is provided "as is", with no guarantee of complete job data, error-free materials, successful submission, interviews, or employment.
-
-## License
-
-[MIT](LICENSE)
+Verify documents, job status and salary against original sources. The software does not guarantee complete
+information, successful submission or employment.

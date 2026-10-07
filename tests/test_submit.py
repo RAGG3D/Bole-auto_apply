@@ -23,6 +23,14 @@ class SubmitLoopTests(unittest.TestCase):
         self.job = self.base / "Applications" / "Tier 1 (80+)" / "Example - Analyst"
         (self.job / "_content").mkdir(parents=True)
         self.verdict = {
+            "schema_version": 2,
+            "material_mode": "strict", "workflow_variant": "full",
+            "submission_policy": "authorized_only",
+            "job_open": True, "location_compatible": True, "domain_fit": True,
+            "employer_excluded": False, "documents_complete": True,
+            "required_documents": ["cv"],
+            "requirements": [{"id": "r1", "quote": "Analyse data", "source": "JD.txt",
+                              "coverage": "verified", "evidence_refs": ["skills.R"]}],
             "jd_key": "Example :: Data Analyst",
             "company": "Example",
             "title": "Data Analyst",
@@ -51,7 +59,7 @@ class SubmitLoopTests(unittest.TestCase):
         (self.job / "Li - CV - Example.pdf").write_bytes(b"%PDF fixture")
         (self.job / "Li - Cover Letter - Example.pdf").write_bytes(b"%PDF fixture")
         (self.job / "_content/cv.json").write_text(
-            json.dumps({"type": "cv", "profile": "R and Python analyst"}),
+            json.dumps({"type": "cv", "target_title": "Data Analyst", "profile": "R and Python analyst"}),
             encoding="utf-8",
         )
         self.facts = {
@@ -82,6 +90,15 @@ class SubmitLoopTests(unittest.TestCase):
         self.facts_path = self.profile / "facts.json"
         self.config_path.write_text(json.dumps(self.config), encoding="utf-8")
         self.facts_path.write_text(json.dumps(self.facts), encoding="utf-8")
+        (self.job / "JD.txt").write_text("Analyse data", encoding="utf-8")
+        (self.job / "tailoring.json").write_text(json.dumps({
+            "identity_reviewed": True, "claims_reviewed": True,
+            "coverage_reviewed": True, "layout_reviewed": True,
+        }), encoding="utf-8")
+        reviewed = subprocess.run([sys.executable, str(ROOT / "scripts/workflow_guard.py"),
+                                   "review", "--job", str(self.job), "--facts", str(self.facts_path)],
+                                  capture_output=True, text=True)
+        self.assertEqual(reviewed.returncode, 0, reviewed.stderr)
         self.script_path = self.base / "script.txt"
         self.log_path = self.base / "calls.jsonl"
         self.state_path = self.base / "fake.state"
@@ -131,6 +148,46 @@ class SubmitLoopTests(unittest.TestCase):
             json.loads(line)
             for line in self.log_path.read_text(encoding="utf-8").splitlines()
         ]
+
+    def test_stretch_lite_and_documents_only_block_before_adapter_even_force(self) -> None:
+        for update in ({"material_mode": "stretch"}, {"workflow_variant": "lite"},
+                       {"submission_policy": "never"}):
+            with self.subTest(update=update):
+                (self.job / "verdict.json").write_text(json.dumps({**self.verdict, **update}))
+                result = self.command("run", "--job", self.job, "--config", self.config_path,
+                                      "--facts", self.facts_path, "--force")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.log_path.exists())
+                continued = self.command("continue", "--job", self.job)
+                self.assertNotEqual(continued.returncode, 0)
+                self.assertFalse(self.log_path.exists())
+
+    def test_verified_recovery_limit_blocks_extra_browser_calls(self) -> None:
+        self.config["auto_submit"]["max_continues_per_job"] = 0
+        self.config_path.write_text(json.dumps(self.config))
+        self.script_path.write_text("RESULT: SUBMITTED\nVERIFY: NOT_SUBMITTED | progress=fields_saved\n")
+        first = self.run_new()
+        self.assertEqual(first.stdout.strip(), "RESULT: UNKNOWN")
+        self.assertEqual(self.command("verify", "--job", self.job).returncode, 0)
+        resumed = self.command("continue", "--job", self.job)
+        self.assertNotEqual(resumed.returncode, 0)
+        self.assertEqual(self.ledger_entry()["status"], "manual")
+        self.assertEqual(len(self.calls()), 2)
+
+    def test_changed_pdf_blocks_before_adapter(self) -> None:
+        (self.job / "Li - CV - Example.pdf").write_bytes(b"changed document")
+        result = self.run_new()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("changed since review", result.stderr)
+        self.assertFalse(self.log_path.exists())
+
+    def test_legacy_pack_requires_new_review(self) -> None:
+        v = dict(self.verdict)
+        v.pop("schema_version")
+        (self.job / "verdict.json").write_text(json.dumps(v))
+        result = self.run_new()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.log_path.exists())
 
     def test_need_otp_continue_reuses_thread_then_submits_and_dedupes(self) -> None:
         self.script_path.write_text(

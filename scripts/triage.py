@@ -15,8 +15,13 @@ DEFAULT_SENIOR = (
     r"\b(?:senior|lead|principal|staff|head|director|chief|manager|architect|founding)\b"
 )
 DEFAULT_GOVERNMENT = (
-    r"\b(?:graduate\s+program|traineeship|australian\s+public\s+service|APS)\b"
+    r"\b(?:australian\s+public\s+service|APS|defence)\b"
 )
+
+
+def employer_key(value: object) -> str:
+    text = re.sub(r"[^\w]+", " ", str(value or "").casefold()).strip()
+    return re.sub(r"(?:\s+(?:pty|ltd|limited|inc|llc|corporation))+$", "", text).strip()
 
 
 def safe_regex(pattern: object, label: str) -> re.Pattern[str] | None:
@@ -85,6 +90,8 @@ def bucket_candidates(
     )
     redline = safe_regex(config.get("redline_stack_regex", ""), "redline_stack_regex")
     positive = positive_pattern(config)
+    adjacent = safe_regex(config.get("adjacent_title_regex", ""), "adjacent_title_regex")
+    excluded = {employer_key(x) for x in config.get("excluded_employers", [])}
     senior = safe_regex(config.get("senior_regex"), "senior_regex") or re.compile(
         DEFAULT_SENIOR, re.IGNORECASE
     )
@@ -98,6 +105,8 @@ def bucket_candidates(
         "LIST_senior": [],
         "SCORE": [],
         "LIST_other": [],
+        "REVIEW": [],
+        "SKIP_employer": [],
     }
 
     for raw in candidates:
@@ -108,24 +117,30 @@ def bucket_candidates(
         company = str(candidate.get("company") or "")
         haystack = f"{title} {company}".strip()
         positive_hit = bool(positive and positive.search(haystack))
-        if candidate.get("source") == "manual":
+        if employer_key(company) in excluded:
+            bucket = "SKIP_employer"
+            reason = "用户配置的雇主排除项（同样适用于手动链接）"
+        elif candidate.get("source") == "manual":
             # 用户显式指定的岗不受任何 title 正则淘汰；资格与红线由打分阶段按全文 JD 核对
             bucket = "SCORE"
             reason = "用户手动指定，直接进入全文打分（资格与红线由打分阶段按全文 JD 核对）"
         elif restrict_eligibility and (
             (eligibility and eligibility.search(haystack)) or government.search(haystack)
         ):
-            bucket = "SKIP_eligibility"
-            reason = "标题或公司命中资格/政府项目机械闸门"
+            bucket = "REVIEW"
+            reason = "资格信号待全文核实；公司名称或标题不能证明资格不符"
         elif redline and redline.search(title) and not positive_hit:
-            bucket = "SKIP_redline"
-            reason = "标题命中红线技术且没有正向轮辐词"
+            bucket = "REVIEW"
+            reason = "红线信号待全文确认是否必备、可选或替代选项"
         elif senior.search(title) and not dual_band_title(title, senior):
             bucket = "LIST_senior"
             reason = "标题命中资深/管理封顶词"
         elif positive_hit:
             bucket = "SCORE"
             reason = "命中目标职位或技能轮辐词"
+        elif adjacent and adjacent.search(title):
+            bucket = "REVIEW"
+            reason = "相邻职位召回；必须按实际职责验证，不能因 consultant 等名称直接认定匹配"
         else:
             bucket = "LIST_other"
             reason = "未命中目标轮辐词"

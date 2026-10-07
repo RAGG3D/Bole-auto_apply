@@ -2,199 +2,155 @@
 
 [English](README.en.md)
 
-> **千里马常有，而伯乐不常有——现在有了。**
+> 千里马常有，而伯乐不常有——现在有了。
 
-Bole 是装在 [Claude Code](https://claude.com/claude-code) 里的开源求职助手：自动发现职位、打分筛选，并基于**你确认过的真实经历**，为每一个 JD 量体裁衣地生成定制简历、求职信与投递指引。不海投，不捏造。它是一个 clone 即用的技能包——不是网站或云服务，你的数据全部留在本机。
+Bole 是本地求职技能包：发现职位、按完整 JD 匹配、生成简历和求职信，并在用户授权后
+投递。Claude、Codex 和其他能读写文件、运行 Python 的 agent 共用同一工作流。
+默认材料只使用确认事实；明确要求 **Stretch／编写硬缺口** 时生成保留原经历的扩展
+草稿，**只生成文件，不上传、不投递**。
 
----
+## 选择 Bole 或 Bole Lite
 
-## ⚡ 最简上手（三步）
+| | Bole | Bole Lite |
+|---|---|---|
+| 招聘广告 | 按配置发现 + 用户补充 | **用户手动提供全部链接/完整 JD** |
+| 匹配 | 全文资格闸门、职责匹配、评分和召回复核 | 逐条要求与事实对应，不搜索/排名 |
+| 默认输出 | CV、cover、JD 要求的其他材料 | **CV**，cover 仅按用户要求 |
+| Stretch | 明确触发，只出文件 | 同样支持，只出文件 |
+| 投递 | 可选，默认关闭；授权后使用 OpenClaw | **用户手动投递** |
+| 中心 token 预算/岗 | 约 **13.1 万**（含投递） | 约 **2.83 万**（CV） |
 
-**前提**：Python ≥ 3.10；已安装并登录 [Claude Code CLI](https://claude.com/claude-code)（用你自己的订阅，任何型号均可）；Git。推荐装 Chrome/Chromium/Edge 用于自动出 PDF——没有也不要紧，会生成 HTML 让你 Ctrl+P 打印。
+这是 agent 驱动的技能，不是无人监管的独立程序或保证覆盖全部网站的搜索服务。
 
-```bash
+## 开始使用
+
+需要 Python ≥3.10、Git，以及能访问此目录的 agent。Chrome/Chromium/Edge 用于 PDF；
+没有浏览器保留 HTML，手动打印。自动投递另需可用 OpenClaw；Lite 不需要。
+
+```sh
 git clone https://github.com/RAGG3D/Bole-.git bole
 cd bole
-bash install.sh   # 只检查环境并给指引，绝不擅自安装
-claude
+bash install.sh
 ```
 
-进入 Claude Code 后，依次输入三个命令：
+然后给当前 agent 以下指令之一：
 
-| 步骤 | 命令 | 它做什么 |
-|---|---|---|
-| 1 | `/doctor` | 环境体检：逐项检查，缺什么给中文修复指引，**不静默安装任何东西** |
-| 2 | `/setup` | 采访式建档：分五轮问你经历/技能/红线/求职意向，逐条确认后写入本地"事实台账" |
-| 3 | `/scan` | 扫描职位 → 打分分档 → 为匹配岗生成定制 CV/求职信 PDF + 每岗一份中文投递指引 |
+```text
+读取 SKILL.md，使用 Bole 建立我的资料并匹配最近 7 天的职位，只生成文件。
 
-跑完打开 `Applications/` 文件夹：每个匹配职位一个文件夹，内含 JD 全文、定制简历 PDF、定制求职信 PDF，和一份告诉你**怎么投、薪资填多少**的 README。照着投就行。
+读取 bole-lite/SKILL.md，使用 Bole Lite。以下是全部广告链接：……
+根据我的确认资料和红线，为每岗生成英文两页 CV，我自己投递。
 
-每轮 `/scan` 展示初始分桶后都会问你是否要补一个职位。可直接粘贴任何网站的职位
-详情链接；没有链接就粘贴 JD 全文。
-
-搜索时间窗口默认最近 7 天（`/setup` 建档时写入 `config.days`）。想临时改窗口，
-在 `/scan` 时说一句"只看最近 3 天"或"扩到 14 天"即可（对应 `discover --days N`，
-不用改配置）；想永久修改就更新 `profile/config.json` 里的 `days`。
-
-第四个命令 `/apply`（自动投递）**默认关闭**；开关未开时运行它只会解释开通条件，不碰网络。开启并投递后，每个岗位文件夹里的 `STATUS.md` 会**自动标记结果**（✅ 已提交 / ⏸ 需要补料 / 🧱 阻断转手动 / ❓ 待核实），打开 `Applications/` 一眼可见哪些投了、哪些卡在哪。详见下文「自动投递」一节。
-
-仓库还附带一个与求职功能无关的独立插件 **assHOLassin**（本地邮件清理刺客），三条命令即可用：`/mail-setup` 用你自己生成的邮箱授权码接入（支持 Gmail / Outlook·Hotmail / 网易 163·126 / QQ 等）→ `/mail-rules` 设定发件人/主题关键词、时间窗口和清理等级（温和标记 / 移至垃圾桶 / 彻底删除）→ `/mail-clean` 永远先 dry-run 列清单、你确认后才动手。详见下文「插件」一节。
-
----
-
-## 三个立身原则
-
-1. **事实台账是唯一事实来源**。`/setup` 采访时你逐条确认过的经历、技能、数字成果，构成本地的 `profile/facts.json`。生成任何材料、回答任何表单，只允许引用台账里的事实——**结构上不可能捏造**；出 PDF 前还有一个确定性扫描器强制把关。
-2. **红线机制**。建档时会明确问你"哪些技能你没有、绝不能写"（比如没用过 Power BI、没做过湿实验）。红线词一旦出现在生成材料里，扫描器直接拒绝出 PDF。
-3. **诚实缺口句**。对弱匹配职位，求职信里会有**恰好一句**平静、不卑不亢的真实差距说明，随后衔接你的可迁移能力——不装完美，也不自贬。
-
-## 工作原理
-
-```
-免费公开通道发现职位（LinkedIn / Workday / 公开 ATS / 任意详情链接 / 手贴 JD）
-        │
-        ▼
-台账去重 → 机械分诊：正则分桶，把资深岗/资格不符/红线岗先筛掉 —— 省的是你的 token 额度
-        │
-        ▼
-Claude 逐岗读全文 JD 打分（0-100）：资格闸门 → 资历封顶 → 红线核对 → 分档归档
-        │                         Tier 1 (80+) / Tier 2 (70-79) / Tier 3 (<70)
-        ▼
-生成材料（只引用事实台账）→ 红线扫描（不过不出 PDF）→ 本机浏览器打印 PDF（零重依赖）
-        │
-        ▼
-每岗 README：得分与理由、推荐薪资（数字+币种+理由）、该 ATS 的已知坑、表单答案速查
+使用 Bole Lite Stretch，为以上岗位编写合理的硬技能实施过程。
+保留每段经历原有的目的、技术架构和 achievement，只生成文件，不投递。
 ```
 
-几条硬规则值得知道：资深岗（Senior/Lead+）有分数封顶且**永不生成材料**——投不该投的岗浪费所有人的时间；要求公民/PR/安全许可而你不符的岗直接跳过；少于 800 字符的残缺 JD（stub）会被标记，**绝不允许按 stub 直接自动投递**；生成边界由匹配分、核心红线、stretch 容忍度和 `max_generate` 上限共同决定。
+Claude Code 可使用 `/doctor` → `/setup` → `/scan`；其他 agent 直接读取同一份
+`references/workflows/`。已有事实资料只补缺失/矛盾部分，无需每次重做采访。
+AGENTS.md 和 CLAUDE.md 都指向共享入口，没有两套会漂移的核心规则。
 
-每个 generate 岗位的文件夹里有：`JD.txt`、`verdict.json`（打分裁决）、定制 CV、定制求职信、投递 README 和 `_content/` 源 JSON。推荐薪资只是地区/职位信息的起点；没有依据时明确写"无参考区间"，不会编数字。
+复制到任意 agent 技能目录前，可构建自包含包（目标不能已存在）：
 
-## 自动投递（v0.2，默认关闭）
+```sh
+python3 scripts/package_skill.py --variant full --out /tmp/bole
+python3 scripts/package_skill.py --variant lite --out /tmp/bole-lite
+```
 
-`/apply` 可以把投递包里"干净 ATS"（实测可自动投：Greenhouse / Ashby / HiBob / Oracle / Workday）的岗位，交给 [OpenClaw](https://www.npmjs.com/package/openclaw) 浏览器代理自动提交。OpenClaw 免费开源、走你自己的 Claude 订阅，是 Bole **唯一的可选外部依赖**——不装它，建档/扫描/材料生成完整可用。
+包只取公共资源，不含个人事实、聊天、生成简历或凭据。不同平台的自动发现机制由其
+自身决定；直接让 agent 读取 SKILL.md 即可。[跨 agent 说明](references/agents.md)。
 
-如决定启用：
+## v0.6 修复了什么
 
-1. 自行安装 Node ≥ 18 和 `npm install -g openclaw`；
-2. 运行 `/doctor`，按指引启动 `openclaw gateway run`，并由**你本人**登录目标招聘站；
-3. 理解确认策略后，把 `config.auto_submit.enabled` 改为 `true`；
-4. 运行 `/apply`，按 `per_run`（默认，每轮确认一次清单）或 `per_job`（每单确认）批准。
+- **匹配错误与遗漏**：按实际职责扩展相邻职位，不只看 title；consultant 不自动等于
+  AI automation。记录来源覆盖、失败和待复核项，不把漏抓说成没有岗位。
+- **完整 JD 闸门**：正文和必需 PD/selection criteria 附件读全才生成。800 字符只是
+  提示，长正文也不能掩盖缺附件。资格不符、关闭、雇主排除只进中央报告。
+- **防止过早筛除**：标题中的公民/clearance/红线信号送 REVIEW；企业毕业生项目不
+  等于政府身份限制。用户链接进入全文核对。雇主 blocklist 同样约束手动链接。
+- **资料与写作**：同步最新确认项目/纠正，检查必留经历；保留项目用途、架构和团队
+  角色。CV 定稿后同步 cover，不强制每封信硬塞一句缺口。
+- **审核与投递**：CV/cover 目标 title 一致；文件或事实变化使审核过期。严格区分
+  verified、transferable、gap、proposed；普通表单文字由 agent 依据事实处理。
+  所有合规 tier 都进入已授权队列；超时先核实，有证据才记已提交。
 
-安全设计：
+规则来源是近期实际纠错；公开仓库只保留匿名化总结。
+[修订依据](references/workflow-audit.md) · [匹配规则](references/matching.md) ·
+[材料规则](references/materials.md) · [JSON 契约](references/contracts.md)。
 
-- 只有 `data/ats_map.json` 中 `auto_submit=true` 且在你 `allowed_ats` 白名单里的平台会自动投；其余始终保留手动包；
-- 全程严格顺序投递，每单间隔至少 30 秒，每轮有上限；
-- 登录/注册/设密码必须由**你本人**在浏览器完成——Bole 不接收、不存储、不代输任何密码，唯一例外是邮箱验证码（OTP）由你转达、用后即弃（Workday 每家公司租户是独立账号，首投/复投需要你先登录，这是设计而非故障）；
-- **超时 ≠ 失败**：代理可能已提交但回复丢失。超时后先只读核实（verify），`UNKNOWN` 状态**永不自动重投**；同一职位已 `submitted` 或 `unknown` 时脚本直接拒绝再投（`--force` 可越过，但可能双投，仅限人工核实后使用）；
-- 验证码、在线测评、视频面试、仅 OAuth 注册 → 直接阻断转手动；
-- **投递状态自动标记回 `Applications/`**：每次状态变化，对应岗位文件夹里的 `STATUS.md` 会同步更新（✅ 已提交 / ⏸ 需要补料 / 🧱 阻断转手动 / 📝 手动 / ❓ 未知待核实），打开文件夹一眼可见，不用翻台账。
+## Strict 与 Stretch
 
-## 隐私与安全
+**Strict 默认开启**：只使用确认事实和最新纠正。红线扫描是词汇检查，不能证明材料
+真实；agent 仍需核对原始证据、技能归属、日期和成果。不得将 JD 的要求当作事实。
 
-- 你的个人资料（`profile/`）、生成材料（`Applications/`）、运行状态（`state/`）全部**只存本地**，已写入 `.gitignore`，永不入库；
-- 不发送任何遥测；
-- 免登录抓取遵守礼貌规则：自定义 UA、请求间隔 ≥ 2 秒、429 退避、绝不携带 Cookie；LinkedIn 访客接口的使用仍可能受平台条款约束，Bole 已限速并默认优先公司直连 ATS，请自行评估（见免责声明）；
-- OpenClaw 的登录态留在它的浏览器 profile 里，Bole 不读取。
+**Stretch 必须明确触发**：“Stretch”、“编写”模式或明确“编写/编造 JD 硬缺口”。普通“编写简历”
+以及 config 中旧的 `stretch` 匹配容忍度都不触发。先冻结 strict 基线，再把兼容的技术
+实施过程补充到最适合的经历；保留原有技术、架构、目的、成果、时间和团队身份。
+不为覆盖关键词把本地工具改成企业平台，也不编学历、证照、客户、年限或数字成果。
 
-## 支持的职位来源
+新增内容在 `tailoring.json` 标明依据和 verified/proposed，正文保持自然。没有合理
+归属就保留 gap，不能承诺完美覆盖。扩展草稿放 `Applications/Stretch/`，其
+`material_mode=stretch, submission_policy=never` 由脚本拦截 run、continue、--force。
+用户后来补齐事实及项目归属后，须重新生成和审核 strict 包才能进入真实申请流程。
+[Stretch 完整说明](references/stretch.md)。
 
-| 来源 | 方式 | 说明 |
-|---|---|---|
-| LinkedIn | 访客接口，无需登录 | 含 junior 岗召回增强；残缺 JD 自动标记；外部 ATS 直链自动解析 |
-| Workday | 公开 JSON | 在 config 里配置目标公司站点 |
-| Greenhouse / Lever / Ashby | 公开职位板 JSON | 在 config 里配置公司 token |
-| 公司官网直投页 | URL 抓取 | 含机器人墙检测，遇墙转人工队列（不丢失） |
-| 中国大陆招聘站 | 用户粘贴职位详情 URL | 尝试礼貌直连；登录墙/访问验证转手贴 JD |
-| SEEK | 手贴 JD | 无免费接口；复制粘贴进来，后续流程完全一样 |
+## 每岗 token 估算
 
-提醒：公司改名或双名时，双键去重仍可能漏掉重复职位，投递前请人工自查。
+| 模式 | 中心预算 | 规划范围 |
+|---|---:|---:|
+| Bole 全流程（CV+cover+投递核实） | 130,700 | 65,350–392,100 |
+| Bole Stretch（文件，不投递） | 80,500 | 40,250–241,500 |
+| Lite（CV，用户手动投递） | 28,300 | 14,150–84,900 |
+| Lite Stretch（扩展 CV，不投递） | 48,100 | 24,050–144,300 |
 
-## 中国大陆招聘站
+**这是估算，尚未实测新版均值**。输入包含缓存命中和重复上下文；不是订阅扣费额度。
+默认已有资料、压缩上下文、完整版 5 轮 ATS + 1 轮核实。长会话/反复改稿可能远超范围。
+Lite 预算约低 78%，主要因为不搜索、不自动投递、默认不写 cover，输出范围不同。
 
-BOSS直聘、智联招聘、前程无忧、猎聘和拉勾的站内搜索通常要求登录或有强反爬。
-Bole 不模拟登录、不做站内搜索，也不绕过极验、滑块或访问验证。正确用法有两条：
+```sh
+python3 scripts/token_budget.py --variant full --jobs 10
+python3 scripts/token_budget.py --variant lite --jobs 10 --stretch
+python3 scripts/token_budget.py --usage state/usage.jsonl --jobs 10 --submitted 8
+```
 
-1. 运行 `/scan`，在初始分桶后的固定补录问题里粘贴职位**详情页链接**。Bole 会用
-   `sources.py jd --source url` 尝试直连，支持 UTF-8、GBK/GB2312/GB18030；
-2. 如果返回 `bot_walled` 或内容不完整，复制职位 JD 全文并贴回同一轮，走 paste
-   通道。原链接仍保留在人工队列，不会丢失。
+[计算方法、历史统计局限及实测格式](references/token-budget.md)。
 
-这些平台在 `ats_map` 中全部标为手动投递。BOSS直聘是“先聊后投”的沟通制平台，
-Bole 只能依据事实台账和 JD 准备中文简历、求职信及一段开场白，消息必须由你本人
-发送。将 `facts.language_of_materials` 设为 `"zh"` 可生成中文材料。
+## 文件与投递
 
-中国职位常按月薪填写。投递包 README 会把结构化年薪按 12 薪基准换算为月薪，并
-明确提示 13–16 薪、奖金及税前/税后口径仍需你结合职位说明校准。
+运行时只使用 gitignored 的 `profile/`、`Applications/`、`state/`。每岗保留 JD、
+verdict、内容 JSON、PDF/HTML、tailoring 审核依据和 review 哈希。真实匹配包按
+80+/70–79/<70 分档；Lite 与 Stretch 用各自目录。缺全文或未通过生成闸门的岗位
+只出现在中央报告，不创建空目录；待补/超额岗位保留到下轮，避免 seen 台账吞掉。
 
-## 插件
+`/apply` 默认关闭，启用需配置 `auto_submit.enabled=true`、适用的用户授权和确认
+策略。只有 ATS 地图允许且在用户白名单内才自动提交。旧包须升级 v2 verdict 重审。
+上传前核对岗位专属 PDF 和预览，不使用网站存储的旧简历。只有确认页/权威申请列表/
+确认邮件才证明成功；unknown 不自动重投。状态写回岗位 STATUS.md。
 
-### assHOLassin：本地邮件清理刺客
+登录默认由用户完成；邮箱读取及平台清理只按当前用户明确授权和环境能力处理。真人
+验证、在线评测和登录墙不会被绕过。Bole Lite 和 Stretch 不调用投递代理。
+[投递协议](references/workflows/apply.md)。
 
-[assHOLassin](plugins/assholassin/README.md) 是与求职主线互不依赖的独立 Codex /
-Claude Code 插件。它使用 Python 标准库通过 IMAP 接入 Gmail、Outlook/Hotmail、
-网易和 QQ/Foxmail，只读取邮件头并在本地匹配订阅垃圾邮件规则。流程固定为
-`/mail-setup` → `/mail-rules` → `/mail-clean`，且永远先 dry-run、确认后执行；
-永久删除还需单独再次确认。
+公开来源脚本支持 LinkedIn、Workday、Greenhouse/Lever/Ashby 职位板和直接 URL/手贴
+JD。SEEK/Indeed 可借助当前 agent 的公开检索工具发现；遇墙请贴正文。中国站可尝试
+详情 URL，支持中文编码；访问验证转手贴，不做登录搜索。BOSS直聘等由用户本人沟通。
+不要将个人材料/凭据提交到 Git。远程 agent/模型处理内容仍受其服务数据政策约束；
+“本地存储”不等于模型推理一定离线。
 
-插件不带任何默认账号或凭据，不使用 OAuth。每位用户在本机终端隐藏输入可随时吊销
-的授权码或应用专用密码；邮箱登录密码和邮件正文永远不进入插件。
+## 独立邮件插件
 
-## FAQ
+[assHOLassin](plugins/assholassin/README.md) 保留为独立 IMAP 清理插件：
+`/mail-setup` → `/mail-rules` → `/mail-clean`，先 dry-run 再按用户确认执行。
+求职任务不默认删除邮件、拒信或申请目录。
 
-**要花钱吗？** 仓库零付费依赖。消耗的只有你自己 Claude 订阅的额度；打分默认走"省额度模式"（先机械筛掉大部分，再每批五岗小批量打分）。
-
-**必须装 OpenClaw 吗？** 不需要。只有可选的 `/apply` 用它，核心投递包流程完全不依赖。
-
-**会编造我的经历吗？** 不会，而且是"结构上不会"：材料只能引用你确认过的事实台账，红线扫描不通过就不出 PDF。
-
-**能用现有简历吗？** 可以作为 `/setup` 的采访线索，Claude 会抽取后逐条回读事实与数字，只有你确认后才写入台账。
-
-**为什么弱匹配的求职信要写一句差距？** 为了准确设定期望；随后立即衔接可迁移能力——不道歉、不自贬，也不装完美。
-
-**超时了能再点一次投递吗？** 不能。代理可能已经提交成功只是回复丢了，必须先 verify、查确认邮件，避免双投。
-
-**为什么不自动抓 SEEK？** SEEK 没有适合零付费免登录方案的公开接口（常返回 403）。手动复制 JD 粘贴进来即可。
-
-**没装浏览器会失败吗？** 不会。会留下完整 HTML，用浏览器打开 Ctrl+P 另存为 PDF。
-
-**只适用于澳洲吗？** 不。默认配置以墨尔本为例；地区、关键词、薪资参考区间（内置 AU/US/UK/SG 及北京、上海、深圳、杭州）都可配置。
-
-**Windows 能用吗？** 支持 Linux / macOS / Windows（建议 WSL2；原生 Windows 按 README 手动确认环境后同样可用）。
-
-**有英文版吗？** 英文文档见 [README.en.md](README.en.md)，界面语言由 `config.ui_language` 控制；生成的简历/求职信本就默认英文（可改）。
-
-## 路线图
-
-| 版本 | 内容 | 状态 |
-|---|---|---|
-| v0.1 | /doctor 体检 + /setup 采访建档 + /scan 扫描打分、生成"手动投递包" | ✅ 已交付（tag `v0.1`） |
-| v0.2 | /apply 接 OpenClaw：干净 ATS 自动投 + 补料升级回路 + 超时先核实防双投 | ✅ 已交付（tag `v0.2`） |
-| v0.3 | 社区化：ats_map PR 机制 + 多地区薪资 + 英文版 + 离线 CI | ✅ 已交付（tag `v0.3`） |
-| v0.4 | PII 历史清理 + 中国站直连/手贴 + 中文网页与材料支持 | ✅ 已交付 |
-| v0.5 | assHOLassin 独立 IMAP 邮件清理插件 | ✅ 已交付 |
-
-未来改进将继续坚持：本地优先、零付费依赖、事实约束、人工可接管。
-
-## 参与共建
-
-先跑完全离线的自检：
+## 验证与贡献
 
 ```sh
 python3 scripts/ats_lint.py
 python3 -m unittest discover tests
 ```
 
-最有价值的贡献是 **ATS 实测经验**：哪个平台能顺利投、哪个有坑，提 issue 或直接 PR 修改 `data/ats_map.json` 的域名、`auto_submit` 与 `quirks`（有 lint 与离线 CI 把关；域名必须是小写裸域名）。各地区薪资参考区间同样欢迎校准。**不要在 issue/PR 中提交任何 PII**（姓名、邮箱、电话、简历内容、确认编号等）。详见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+测试全离线，使用虚构资料和假的投递代理，不向招聘网站提交申请。
+欢迎补充 ATS 能力地图和来源缺陷报告；不要在 issue/PR 中放个人资料。
+[贡献指南](CONTRIBUTING.md) · [MIT License](LICENSE)。
 
-## 免责声明
-
-- 本工具生成的职位判断、材料和薪资建议，请在投递前**自行核实**；投递行为与结果由使用者自行负责；
-- 使用者须自行遵守各招聘平台的服务条款及当地隐私与就业法规；
-- 薪资参考区间为社区数据，仅供起点，以当地实际行情为准；
-- 自动投递默认关闭；开启后仍受确认策略与安全闸门约束，并始终遵守"绝不代做测评、绝不接触凭据、遇墙转人工"三条铁律；
-- 软件按"原样"提供，不保证职位数据完整、材料无误、投递成功或获得录用。
-
-## License
-
-[MIT](LICENSE)
+材料、职位状态与薪资须结合原始来源核实；软件不保证信息完整、提交成功或获得录用。

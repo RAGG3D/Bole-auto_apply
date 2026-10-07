@@ -29,11 +29,15 @@ else
   notice "未找到 python3；请从 https://www.python.org/downloads/ 安装 Python ≥ 3.10。"
 fi
 
-if command -v claude >/dev/null 2>&1; then
-  claude_version=$(claude --version 2>/dev/null | head -n 1)
-  pass "Claude Code CLI：${claude_version:-已安装}"
-else
-  notice "未找到 claude；请先按 Claude Code 官方说明安装并登录。"
+agent_found=0
+for agent_cli in claude codex; do
+  if command -v "$agent_cli" >/dev/null 2>&1; then
+    pass "可用 agent CLI：$agent_cli"
+    agent_found=1
+  fi
+done
+if [ "$agent_found" -eq 0 ]; then
+  notice "未发现 claude/codex CLI；也可用任何能读取 SKILL.md、编辑文件并执行 Python 的 agent。"
 fi
 
 browser=''
@@ -69,5 +73,5 @@ else
 fi
 
 printf '\n检查完成：%s 项通过，%s 项需留意。\n' "$ok" "$warn"
-printf '本脚本没有安装或修改任何系统组件。下一步：在本目录运行 claude，然后输入 /doctor。\n'
+printf '本脚本没有安装或修改任何系统组件。下一步：让当前 agent 读取本目录 SKILL.md，然后运行 doctor 工作流；Lite 读取 bole-lite/SKILL.md。\n'
 exit 0

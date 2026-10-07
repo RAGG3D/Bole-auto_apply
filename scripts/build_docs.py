@@ -208,8 +208,13 @@ def print_pdf(browser: str, html_path: Path, pdf_path: Path) -> tuple[bool, str]
     return True, ""
 
 
-def build(input_path: Path, output_path: Path, fit_pages: int) -> int:
+def build(input_path: Path, output_path: Path, fit_pages: int,
+          facts_path: Path | None = None) -> int:
     data = load_json(input_path)
+    if facts_path is not None:
+        from redline_scan import scan
+        if scan(facts_path, input_path):
+            raise BuildError("红线扫描失败，未构建材料")
     if output_path.suffix.lower() != ".pdf":
         output_path = output_path.with_suffix(".pdf")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -233,9 +238,13 @@ def build(input_path: Path, output_path: Path, fit_pages: int) -> int:
             )
             return 0
         pages = pdf_pages(output_path)
-        if fit_pages <= 0 or pages <= fit_pages or zoom < 0.75:
+        if pages == 0:
+            raise BuildError("无法确认 PDF 页数，需人工检查；不能标记排版通过")
+        if fit_pages <= 0 or pages <= fit_pages:
             print(f"OK {output_path} ({pages or '?'} pages) [zoom {zoom:.2f}]")
             return 0
+        if zoom <= 0.85:
+            raise BuildError("页数仍超限；请精简内容或调整分页，禁止继续缩小到难以阅读")
         zoom = round(zoom - 0.05, 2)
 
 
@@ -243,6 +252,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="把 Bole 材料 JSON 生成 HTML/PDF")
     parser.add_argument("input", type=Path, help="cv.json 或 cover.json")
     parser.add_argument("output", type=Path, help="目标 PDF 路径")
+    parser.add_argument("--facts", type=Path, help="v0.6 工作流必须传入事实台账进行红线检查")
     parser.add_argument(
         "--fit-pages",
         type=int,
@@ -256,7 +266,7 @@ def make_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = make_parser().parse_args()
     try:
-        return build(args.input, args.output, args.fit_pages)
+        return build(args.input, args.output, args.fit_pages, args.facts)
     except BuildError as exc:
         print(f"错误：{exc}", file=sys.stderr)
         return 2
